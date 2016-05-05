@@ -13,11 +13,55 @@ import (
 	"github.com/go-kit/kit/service"
 )
 
+func TestClientRegistration(t *testing.T) {
+	c := newTestClient(nil)
+
+	services, _, err := c.Service(testRegistration.Name, "", true, &stdconsul.QueryOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	if want, have := 0, len(services); want != have {
+		t.Errorf("want %d, have %d", want, have)
+	}
+
+	if err := c.Register(testRegistration); err != nil {
+		t.Error(err)
+	}
+
+	if err := c.Register(testRegistration); err == nil {
+		t.Errorf("want error, have %v", err)
+	}
+
+	services, _, err = c.Service(testRegistration.Name, "", true, &stdconsul.QueryOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	if want, have := 1, len(services); want != have {
+		t.Errorf("want %d, have %d", want, have)
+	}
+
+	if err := c.Deregister(testRegistration); err != nil {
+		t.Error(err)
+	}
+
+	if err := c.Deregister(testRegistration); err == nil {
+		t.Errorf("want error, have %v", err)
+	}
+
+	services, _, err = c.Service(testRegistration.Name, "", true, &stdconsul.QueryOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	if want, have := 0, len(services); want != have {
+		t.Errorf("want %d, have %d", want, have)
+	}
+}
+
 type testClient struct {
 	entries []*stdconsul.ServiceEntry
 }
 
-func newTestClient(entries []*stdconsul.ServiceEntry) Client {
+func newTestClient(entries []*stdconsul.ServiceEntry) *testClient {
 	return &testClient{
 		entries: entries,
 	}
@@ -25,7 +69,7 @@ func newTestClient(entries []*stdconsul.ServiceEntry) Client {
 
 var _ Client = &testClient{}
 
-func (c *testClient) Service(service, tag string, opts *stdconsul.QueryOptions) ([]*stdconsul.ServiceEntry, *stdconsul.QueryMeta, error) {
+func (c *testClient) Service(service, tag string, _ bool, opts *stdconsul.QueryOptions) ([]*stdconsul.ServiceEntry, *stdconsul.QueryMeta, error) {
 	var results []*stdconsul.ServiceEntry
 
 	for _, entry := range c.entries {
@@ -112,48 +156,4 @@ var testRegistration = &stdconsul.AgentServiceRegistration{
 	Tags:    []string{"my-tag-1", "my-tag-2"},
 	Port:    12345,
 	Address: "my-address",
-}
-
-func TestClientRegistration(t *testing.T) {
-	c := newTestClient(nil)
-
-	services, _, err := c.Service(testRegistration.Name, "", &stdconsul.QueryOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-	if want, have := 0, len(services); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
-
-	if err := c.Register(testRegistration); err != nil {
-		t.Error(err)
-	}
-
-	if err := c.Register(testRegistration); err == nil {
-		t.Errorf("want error, have %v", err)
-	}
-
-	services, _, err = c.Service(testRegistration.Name, "", &stdconsul.QueryOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-	if want, have := 1, len(services); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
-
-	if err := c.Deregister(testRegistration); err != nil {
-		t.Error(err)
-	}
-
-	if err := c.Deregister(testRegistration); err == nil {
-		t.Errorf("want error, have %v", err)
-	}
-
-	services, _, err = c.Service(testRegistration.Name, "", &stdconsul.QueryOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-	if want, have := 0, len(services); want != have {
-		t.Errorf("want %d, have %d", want, have)
-	}
 }

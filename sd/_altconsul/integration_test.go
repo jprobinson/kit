@@ -14,78 +14,72 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
+	// Connect to Consul.
 	consulAddr := os.Getenv("CONSUL_ADDRESS")
 	if consulAddr == "" {
 		t.Fatal("CONSUL_ADDRESS is not set")
 	}
-
 	stdClient, err := stdconsul.NewClient(&stdconsul.Config{
 		Address: consulAddr,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var (
-		node        = "my-node"
-		address     = "my-address:12345"
-		datacenter  = "dc1" // by default!
-		serviceID   = "my-service-ID"
-		serviceName = "my-service"
-		tags        = []string{} //"my-tag-1", "my-tag-2"}
-		port        = 12345
-		checkID     = "my-check-ID"
-		name        = "my-check-name"
-		status      = "my-status"
-		notes       = "my-notes"
-		output      = "my-output"
-		factory     = func(instance string) (service.Service, io.Closer, error) { return nil, nil, nil }
-	)
-
 	client := NewClient(stdClient)
 	logger := log.NewLogfmtLogger(os.Stderr)
 
-	publisher := NewPublisher(client, &stdconsul.CatalogRegistration{
-		Node:       node,
-		Address:    address,
-		Datacenter: datacenter,
-		Service: &stdconsul.AgentService{
-			ID:      serviceID,
-			Service: serviceName,
-			Tags:    tags,
-			Port:    port,
-			Address: address,
-		},
-		Check: &stdconsul.AgentCheck{
-			Node:        node,
-			CheckID:     checkID,
-			Name:        name,
-			Status:      status,
-			Notes:       notes,
-			Output:      output,
-			ServiceID:   serviceID,
-			ServiceName: serviceName,
-		},
-	}, log.NewContext(logger).With("component", "publisher"))
+	// Produce a fake service registration.
+	r := &stdconsul.AgentServiceRegistration{
+		ID:                "my-service-ID",
+		Name:              "my-service-name",
+		Tags:              []string{"alpha", "beta"},
+		Port:              12345,
+		Address:           "my-address",
+		EnableTagOverride: false,
+		// skipping check(s)
+	}
 
-	publisher.Publish()
-	//defer publisher.Unpublish()
-	time.Sleep(time.Second)
-
-	subscriber, err := NewSubscriber(client, factory, log.NewContext(logger).With("component", "subscriber"), serviceName, tags...)
+	// Build a subscriber on r.Name + r.Tags.
+	factory := func(instance string) (service.Service, io.Closer, error) {
+		t.Logf("factory invoked for %q", instance)
+		return service.Fixed{}, nil, nil
+	}
+	subscriber, err := NewSubscriber(
+		client,
+		factory,
+		log.NewContext(logger).With("component", "subscriber"),
+		r.Name,
+		r.Tags,
+		true,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	time.Sleep(time.Second)
+
+	// Before we publish, we should have no services.
 	services, err := subscriber.Services()
 	if err != nil {
 		t.Error(err)
 	}
-
-	if want, have := 1, len(services); want != have {
+	if want, have := 0, len(services); want != have {
 		t.Errorf("want %d, have %d", want, have)
 	}
-	if len(services) > 0 {
-		t.Logf("%#+v", services[0])
+
+	// Build a publisher for r.
+	publisher := NewPublisher(client, r, log.NewContext(logger).With("component", "publisher"))
+	publisher.Publish()
+	defer publisher.Unpublish()
+
+	time.Sleep(time.Second)
+
+	// Now we should have one active service.
+	services, err = subscriber.Services()
+	if err != nil {
+		t.Error(err)
+	}
+	if want, have := 1, len(services); want != have {
+		t.Errorf("want %d, have %d", want, have)
 	}
 }
